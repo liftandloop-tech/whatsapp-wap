@@ -1,0 +1,4 @@
+[2026-05-12T12:10:40.901Z] [INBOX_CONTROLLER] Body: {"conversationId":"cmp2guz460002kjg7pab7boh6","type":"IMAGE","mediaId":"1511646136980505","filename":"1_96.webp"}
+[2026-05-12T12:10:41.324Z] [SEND_MEDIA] Body: {"tenantId":"cmp11ik2e0000kj15xxuyaye9","conversationId":"cmp2guz460002kjg7pab7boh6","type":"IMAGE","mediaId":"1511646136980505","filename":"1_96.webp"}
+[2026-05-12T12:17:27.015Z] [INBOX_CONTROLLER] Body: {"conversationId":"cmp2guz460002kjg7pab7boh6","type":"IMAGE","mediaId":"1482581140017619","filename":"Swakora_updated_logo1.png","mediaUrl":"https://waba.swakora.tech/uploads/outbound/15/1778588244091_Swakora_updated_logo1.png"}
+[2026-05-12T12:17:27.153Z] [SEND_MEDIA] Body: {"tenantId":"cmp11ik2e0000kj15xxuyaye9","conversationId":"cmp2guz460002kjg7pab7boh6","type":"IMAGE","mediaId":"1482581140017619","filename":"Swakora_updated_logo1.png","mediaUrl":"https://waba.swakora.tech/uploads/outbound/15/1778588244091_Swakora_updated_logo1.png"}

@@ -1,0 +1,665 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contact {
+  id           String       @id
+  userId       Int
+  groupId      String
+  phone        String
+  firstName    String?
+  lastName     String?
+  attributes   Json?
+  status       String       @default("ACTIVE")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  ContactGroup ContactGroup @relation(fields: [groupId], references: [id])
+  user         user         @relation(fields: [userId], references: [id])
+
+  @@unique([userId, phone, groupId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model ContactGroup {
+  id            String          @id
+  userId        Int
+  name          String
+  description   String?
+  totalContacts Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  Contact       Contact[]
+  user          user            @relation(fields: [userId], references: [id])
+  send_campaign send_campaign[]
+
+  @@index([userId])
+}
+
+model MetaEventLog {
+  id          Int      @id @default(autoincrement())
+  eventId     String   @unique
+  payloadHash String?
+  wabaId      String?
+  eventType   String
+  fieldName   String?
+  payload     Json
+  status      String
+  attempts    Int      @default(0)
+  isReplayed  Boolean  @default(false)
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([eventType])
+  @@index([wabaId])
+}
+
+model PreVerifiedNumber {
+  id              Int       @id @default(autoincrement())
+  phoneNumber     String    @unique
+  preVerifiedId   String    @unique
+  status          String    @default("PENDING")
+  verificationExp DateTime?
+  createdAt       DateTime  @default(now())
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user      user     @relation(fields: [userId], references: [id])
+}
+
+model WhatsappMessage {
+  id         String   @id
+  clientId   Int
+  sender     String
+  recipient  String
+  direction  String   @default("INBOUND")
+  type       String   @default("TEXT")
+  content    String?
+  mediaUrl   String?
+  status     String   @default("SENT")
+  externalId String?  @unique
+  createdAt  DateTime @default(now())
+  user       user     @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([clientId, sender])
+  @@index([createdAt])
+}
+
+model add_team {
+  id           Int         @id @default(autoincrement())
+  managerId    Int
+  name         String
+  email        String      @unique
+  phone        String
+  userpassword String
+  role         AddTeamRole @default(USER)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime
+  user         user        @relation(fields: [managerId], references: [id], onDelete: Cascade)
+
+  @@index([managerId])
+}
+
+model company_details {
+  id           Int         @id @default(autoincrement())
+  userId       Int         @unique
+  username     String
+  useremail    String      @unique
+  countries    String
+  phone        String
+  userpassword String
+  name         String
+  email        String      @unique
+  gst          String
+  websit       String
+  address      String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime
+  user         user        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   permission?
+  pricing      pricing?
+}
+
+model permission {
+  id                       Int             @id @default(autoincrement())
+  companyId                Int             @unique
+  smssendCampaign          Boolean         @default(true)
+  smsloginAccess           Boolean         @default(true)
+  smssubAccountStatus      Boolean         @default(true)
+  smsEditCampaign          Boolean         @default(true)
+  sms                      Boolean         @default(true)
+  whatsappSubAccountStatus Boolean         @default(true)
+  whatsapp                 Boolean         @default(true)
+  rcsSubAccountStats       Boolean         @default(true)
+  rcsSendCampaign          Boolean         @default(true)
+  rcsLogAccess             Boolean         @default(true)
+  rcsDuplicate             Boolean         @default(true)
+  rcs                      Boolean         @default(true)
+  emailSendCampaign        Boolean         @default(true)
+  emaiLogAccess            Boolean         @default(true)
+  emailEditCampaign        Boolean         @default(true)
+  emailSubAccountStats     Boolean         @default(true)
+  email                    Boolean         @default(true)
+  exportLogs               Boolean         @default(true)
+  showSubAccount           Boolean         @default(true)
+  editSubAccount           Boolean         @default(true)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime
+  company_details          company_details @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model pricing {
+  id               Int             @id @default(autoincrement())
+  companyId        Int             @unique
+  smsSendingPrice  Float
+  smsDeliveryPrice Float
+  rcs              Float
+  Rcsm             Float
+  RcsConv          Float
+  p2a              Float
+  eOtp             Float
+  eTransactional   Float
+  ePromational     Float
+  wotp             Float
+  trans            Float
+  promo            Float
+  conv             Float
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  company_details  company_details @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model send_campaign {
+  id                    Int                     @id @default(autoincrement())
+  userId                Int
+  clientId              Int
+  name                  String                  @default("Untitled Campaign")
+  templateId            String
+  phoneNumberId         String
+  status                campaign_status         @default(QUEUED)
+  recipients            Json?
+  contactGroupId        String?
+  totalRecipients       Int
+  sentCount             Int                     @default(0)
+  deliveredCount        Int                     @default(0)
+  readCount             Int                     @default(0)
+  failedCount           Int                     @default(0)
+  idempotencyKey        String?                 @unique
+  failureReason         String?
+  mediaId               String?
+  isSplit               Boolean                 @default(false)
+  batchSize             Int                     @default(0)
+  intervalSeconds       Int                     @default(0)
+  isScheduled           Boolean                 @default(false)
+  scheduleAt            DateTime?
+  sentAt                DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  ContactGroup          ContactGroup?           @relation(fields: [contactGroupId], references: [id])
+  user                  user                    @relation(fields: [userId], references: [id])
+  whatsapp_message_logs whatsapp_message_logs[]
+
+  @@index([contactGroupId])
+}
+
+model transaction {
+  id          Int      @id @default(autoincrement())
+  clientId    Int
+  amount      Float
+  type        String   @default("DEBIT")
+  status      String   @default("SUCCESS")
+  category    String?
+  referenceId String   @unique
+  unitPrice   Float?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  user        user     @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([referenceId])
+}
+
+model user {
+  id               Int               @id @default(autoincrement())
+  fullname         String
+  email            String            @unique
+  phone            String
+  userStatus       userstatus        @default(active)
+  rolls            UserRole          @default(USER)
+  password         String
+  twoFA            Boolean           @default(false)
+  twoFaType        String            @default("sms")
+  twoFaSecret      String?
+  twoFaOtp         String?
+  twoFaOtpExpiry   DateTime?
+  timezone         String            @default("Asia/Kolkata")
+  createdById      Int?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime
+  Contact          Contact[]
+  ContactGroup     ContactGroup[]
+  RefreshToken     RefreshToken[]
+  WhatsappMessage  WhatsappMessage[]
+  add_team         add_team[]
+  company_details  company_details?
+  send_campaign    send_campaign[]
+  transaction      transaction[]
+  user             user?             @relation("userTouser", fields: [createdById], references: [id])
+  other_user       user[]            @relation("userTouser")
+  user_services    user_services[]
+  waba_credentials waba_credentials?
+  wallet           wallet?
+}
+
+model user_services {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  serviceId Int
+  apiClient String
+  apikey    String
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serviceId])
+}
+
+model waba_credentials {
+  id                 Int       @id @default(autoincrement())
+  clientId           Int       @unique
+  wabaId             String?   @unique
+  phoneNumberId      String?   @unique
+  phoneNumber        String?
+  displayName        String?
+  verifiedName       String?
+  tokenExpiry        DateTime?
+  twoStepPin         String?
+  allocationConfigId String?
+  isCoexistence      Boolean   @default(false)
+  needsVerification  Boolean   @default(false)
+  accessTokenEnc     String?
+  iv                 String?
+  encryptionKeyId    String?
+  status             String    @default("ACTIVE")
+  qualityRating      String    @default("GREEN")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime
+  businessId         String?
+  user               user      @relation(fields: [clientId], references: [id])
+}
+
+model wallet {
+  id        Int      @id @default(autoincrement())
+  clientId  Int      @unique
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  user      user     @relation(fields: [clientId], references: [id])
+}
+
+model whatsappPricingConfig {
+  id        Int      @id @default(autoincrement())
+  category  String   @unique
+  unitPrice Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model whatsapp_message_logs {
+  id              String        @id
+  campaignId      Int
+  clientId        Int
+  wamid           String        @unique
+  conversationId  String?
+  pricingCategory String?
+  billable        Boolean?      @default(false)
+  phone           String
+  status          String
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime
+  send_campaign   send_campaign @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([clientId])
+  @@index([conversationId])
+  @@index([status])
+}
+
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+  wabaAccounts  WabaAccount[]
+}
+
+model WabaAccount {
+  id              String            @id @default(cuid())
+  tenantId        String
+  wabaId          String            @unique
+  businessName    String
+  accessToken     String
+  tokenStatus     TokenStatus       @default(ACTIVE)
+  expiresAt       DateTime?
+  lastValidatedAt DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  templates       MessageTemplate[]
+  phoneNumbers    PhoneNumber[]
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+}
+
+model PhoneNumber {
+  id            String         @id @default(cuid())
+  wabaAccountId String
+  phoneNumberId String         @unique
+  displayNumber String
+  verifiedName  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+  wabaAccount   WabaAccount    @relation(fields: [wabaAccountId], references: [id])
+}
+
+model Conversation {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  phoneNumberId       String
+  waId                String
+  contactName         String?
+  state               ConversationState @default(NEW)
+  conversationVersion Int               @default(1)
+  unreadCount         Int               @default(0)
+  lastCustomerMsgAt   DateTime?
+  lastMessageAt       DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  phoneNumber         PhoneNumber       @relation(fields: [phoneNumberId], references: [id])
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  messages            Message[]
+
+  @@index([tenantId])
+  @@index([phoneNumberId])
+  @@index([waId])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+}
+
+model Message {
+  id               String               @id @default(cuid())
+  tenantId         String
+  conversationId   String
+  wamid            String?              @unique
+  sourceType       ProviderType         @default(WHATSAPP)
+  direction        MessageDirection
+  type             MessageType
+  textContent      String?
+  mediaPayload     Json?
+  externalMetadata Json?
+  metaTimestamp    DateTime
+  createdAt        DateTime             @default(now())
+  mediaCaption     String?
+  mediaChecksum    String?
+  mediaFilename    String?
+  mediaId          String?
+  mediaMimeType    String?
+  mediaSizeBytes   Int?
+  mediaStatus      MediaStatus          @default(NONE)
+  mediaUrl         String?
+  conversation     Conversation         @relation(fields: [conversationId], references: [id])
+  statusEvents     MessageStatusEvent[]
+
+  @@index([conversationId])
+  @@index([conversationId, createdAt, id])
+}
+
+model MessageStatusEvent {
+  id            String                @id @default(cuid())
+  messageId     String
+  status        MessageDeliveryStatus
+  metaTimestamp DateTime
+  rawPayload    Json?
+  createdAt     DateTime              @default(now())
+  message       Message               @relation(fields: [messageId], references: [id])
+
+  @@index([messageId])
+}
+
+model WebhookEvent {
+  id              String           @id @default(cuid())
+  tenantId        String?
+  metaEventHash   String?          @unique
+  eventType       String
+  payload         Json
+  processingState ProcessingState  @default(PENDING)
+  failureCategory FailureCategory?
+  attempts        Int              @default(0)
+  lastAttemptAt   DateTime?
+  receivedAt      DateTime         @default(now())
+  processedAt     DateTime?
+  lastError       String?
+  traceId         String?          @unique
+
+  @@index([traceId])
+  @@index([processingState])
+  @@index([receivedAt(sort: Desc)])
+}
+
+model OutboxEvent {
+  id            String      @id @default(cuid())
+  tenantId      String
+  eventType     String
+  payload       Json
+  createdAt     DateTime    @default(now())
+  aggregateId   String?
+  aggregateType String?
+  attempts      Int         @default(0)
+  lastError     String?
+  publishedAt   DateTime?
+  state         OutboxState @default(PENDING)
+  traceId       String?
+
+  @@index([state])
+  @@index([traceId])
+}
+
+model MessageTemplate {
+  id            String              @id @default(cuid())
+  tenantId      String
+  wabaAccountId String
+  name          String
+  category      TemplateCategory    @default(UTILITY)
+  language      String              @default("en_US")
+  status        TemplateStatus      @default(PENDING)
+  providerId    String?             @unique
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  wabaAccount   WabaAccount         @relation(fields: [wabaAccountId], references: [id])
+  components    TemplateComponent[]
+
+  @@unique([tenantId, name, language])
+  @@index([tenantId])
+  @@index([wabaAccountId])
+}
+
+model TemplateComponent {
+  id         String          @id @default(cuid())
+  templateId String
+  type       ComponentType
+  format     ComponentFormat @default(TEXT)
+  text       String?
+  mediaUrl   String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  template   MessageTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+}
+
+enum AddTeamRole {
+  MANAGER
+  USER
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum campaign_status {
+  QUEUED
+  DRAFT
+  SCHEDULED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum userstatus {
+  active
+  inactive
+  pending
+}
+
+enum ConversationState {
+  NEW
+  ACTIVE
+  WAITING_FOR_AGENT
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  ARCHIVED
+  SPAM
+  BLOCKED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+  STICKER
+  REACTION
+  INTERACTIVE
+  LOCATION
+  CONTACTS
+  TEMPLATE
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  DELETED
+}
+
+enum MediaStatus {
+  NONE
+  PENDING
+  DOWNLOADING
+  AVAILABLE
+  FAILED
+  EXPIRED
+}
+
+enum MessageDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum TokenStatus {
+  ACTIVE
+  EXPIRED
+  NEEDS_REAUTH
+}
+
+enum ProcessingState {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum OutboxState {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum ProviderType {
+  WHATSAPP
+  SYSTEM
+  BOT
+  AGENT
+  WORKFLOW
+  API
+}
+
+enum FailureCategory {
+  RETRYABLE
+  NON_RETRYABLE
+  RATE_LIMITED
+  AUTH_FAILED
+  EXPIRED_MEDIA
+}
+
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DELETED
+}
+
+enum ComponentType {
+  HEADER
+  BODY
+  FOOTER
+  BUTTONS
+}
+
+enum ComponentFormat {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  LOCATION
+}
