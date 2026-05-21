@@ -37,7 +37,7 @@ export class CampaignReportService {
       const limit = Number(payload.limit) || 50;
       const skip = (page - 1) * limit;
 
-      const pipeline = this.buildAggregationPipeline(start, end, limit, skip);
+      const pipeline = this.buildAggregationPipeline(start,end,limit,skip);
       const data = await this.campaignModel.aggregate(pipeline);
 
       return {
@@ -222,6 +222,54 @@ export class CampaignReportService {
       success: true,
       data: stats
     };
+  }
+
+  // 6. GET Daily Stats (Grouped by Date)
+  async getDailyStats(clientId: number, query: any) {
+    try {
+      const matchStage: any = { clientId: clientId };
+      
+      const stats = await this.messageModel.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            },
+            Submitted: { $sum: 1 },
+            Delivered: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0],
+              },
+            },
+            Read: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'read'] }, 1, 0],
+              },
+            },
+            Failed: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'failed'] }, 1, 0],
+              },
+            },
+          },
+        },
+        { $sort: { _id: -1 as const } },
+      ]);
+
+      return stats.map((s) => ({
+        date: s._id,
+        submitted: s.Submitted,
+        delivered: s.Delivered,
+        read: s.Read,
+        failed: s.Failed,
+        autoReply: 0,
+        agentReply: 0,
+        price: `$${(s.Submitted * 0.1).toFixed(2)}`,
+      }));
+    } catch (err) {
+      throw new Error('Failed to fetch daily stats: ' + err.message);
+    }
   }
 
   // ====================build pipeline =================================================

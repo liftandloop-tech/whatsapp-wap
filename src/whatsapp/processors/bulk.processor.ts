@@ -52,6 +52,9 @@ export class BulkProcessor extends WorkerHost {
       }
 
       // 🚨 2. FINANCIAL ATOMIC DEBIT
+      let debited = false;
+      let lastDebitError: any = null;
+
       try {
         await axios.post(
           `${process.env.BACKEND_INTERNAL_URL}/debit`,
@@ -68,18 +71,67 @@ export class BulkProcessor extends WorkerHost {
             },
           },
         );
+        debited = true;
       } catch (debitErr: any) {
+        lastDebitError = debitErr;
+        const httpStatus = debitErr.response?.status;
         const errorData = debitErr.response?.data;
+        this.logger.error(
+          `[DEBIT_PRIMARY_FAIL] HTTP ${httpStatus ?? 'NO_RESPONSE'} — ${debitErr.message}` +
+          (httpStatus === 530 ? ' ← Cloudflare 530: swakora-backend origin is unreachable. Is the backend running on port 3300?' : ''),
+        );
         if (
-          debitErr.response?.status === 402 ||
+          httpStatus === 402 ||
           errorData?.error === 'INSUFFICIENT_FUNDS'
         ) {
           throw new Error('UNRECOVERABLE: INSUFFICIENT_FUNDS');
         }
+      }
+
+      // If primary debit failed, try local loopback fallback (bypasses Cloudflare / public network issues)
+      if (!debited && process.env.BACKEND_INTERNAL_URL !== 'http://localhost:3300/api/internal/whatsapp') {
+        try {
+          this.logger.warn(
+            `[DEBIT_FALLBACK] Primary debit URL failed (${lastDebitError.message}). Attempting local loopback fallback...`,
+          );
+          await axios.post(
+            `http://localhost:3300/api/internal/whatsapp/debit`,
+            {
+              clientId,
+              campaignId: campaignId.toString(),
+              messageId,
+              category: hydratedTemplate.category?.toUpperCase() || 'MARKETING',
+            },
+            {
+              headers: {
+                'x-internal-secret':
+                  process.env.INTERNAL_SYNC_SECRET || 'sync_987654321',
+              },
+            },
+          );
+          debited = true;
+        } catch (fallbackErr: any) {
+          lastDebitError = fallbackErr;
+          const httpStatus = fallbackErr.response?.status;
+          const errorData = fallbackErr.response?.data;
+          this.logger.error(
+            `[DEBIT_FALLBACK_FAIL] HTTP ${httpStatus ?? 'NO_RESPONSE'} — ${fallbackErr.message}` +
+            (httpStatus === 530 ? ' ← Cloudflare 530: swakora-backend is down or port 3300 unreachable.' : ''),
+          );
+          if (
+            httpStatus === 402 ||
+            errorData?.error === 'INSUFFICIENT_FUNDS'
+          ) {
+            throw new Error('UNRECOVERABLE: INSUFFICIENT_FUNDS');
+          }
+        }
+      }
+
+      if (!debited) {
         this.logger.error(
-          `[DEBIT_FAILURE] Pre-dispatch debit failed for Message=${messageId}: ${debitErr.message}`,
+          `[DEBIT_FAILURE] Pre-dispatch debit failed for Message=${messageId}: ${lastDebitError.message}`,
         );
-        throw new Error(`RETRYABLE: Debit bridge failure: ${debitErr.message}`);
+        throw new Error(`RETRYABLE: Debit bridge failure: ${lastDebitError.message}`);
       }
 
       // 3. ISOLATED RATE LIMITING
@@ -173,6 +225,7 @@ export class BulkProcessor extends WorkerHost {
         );
 
         // 🔄 TRIGGER REFUND
+        let refunded = false;
         try {
           await axios.post(
             `${process.env.BACKEND_INTERNAL_URL}/refund`,
@@ -187,10 +240,34 @@ export class BulkProcessor extends WorkerHost {
               },
             },
           );
+          refunded = true;
         } catch (refundErr: any) {
-          this.logger.error(
-            `[REFUND_SYSTEM_FAILURE] Failed to refund Client=${clientId}: ${refundErr.message}`,
+          this.logger.warn(
+            `[REFUND_FALLBACK] Primary refund URL failed (${refundErr.message}). Attempting local loopback fallback...`,
           );
+        }
+
+        if (!refunded && process.env.BACKEND_INTERNAL_URL !== 'http://localhost:3300/api/internal/whatsapp') {
+          try {
+            await axios.post(
+              `http://localhost:3300/api/internal/whatsapp/refund`,
+              {
+                clientId,
+                messageId,
+              },
+              {
+                headers: {
+                  'x-internal-secret':
+                    process.env.INTERNAL_SYNC_SECRET || 'sync_987654321',
+                },
+              },
+            );
+            refunded = true;
+          } catch (fallbackRefundErr: any) {
+            this.logger.error(
+              `[REFUND_SYSTEM_FAILURE] Failed to refund Client=${clientId}: ${fallbackRefundErr.message}`,
+            );
+          }
         }
 
         // 🏁 CHECK COMPLETION EVEN ON FATAL
