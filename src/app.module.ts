@@ -87,8 +87,6 @@ function parseRedisUrl(redisUrl: string): Record<string, any> {
         const resilienceOpts: any = {
           maxRetriesPerRequest: null,
           enableReadyCheck: false,
-          connectTimeout: 10000,
-          commandTimeout: 10000,
           keepAlive: 30000,
           retryStrategy: (times: number) => {
             if (times > 20) return null; // stop retrying after 20 attempts

@@ -28,8 +28,6 @@ import { WhatsappGateway } from '../gateways/whatsapp.gateway';
           maxRetriesPerRequest: null,
           enableReadyCheck: false,
           lazyConnect: false,
-          connectTimeout: 10000,       // 10s to establish a connection
-          commandTimeout: 10000,       // 10s per command before timing out
           keepAlive: 30000,            // Send TCP keepalive every 30s to prevent ECONNRESET
           retryStrategy: (times: number) => {
             if (times > 20) {
