@@ -31,6 +31,11 @@ export class CampaignReportController {
     return this.campaignReportService.getSubAccountStats(clientIds);
   }
 
+  @Get('daily-stats/:clientId')
+  getDailyStats(@Param('clientId') clientId: string, @Query() query: any) {
+    return this.campaignReportService.getDailyStats(Number(clientId), query);
+  }
+
   @Get('failed-messages/:clientId')
   getFailedMessages(@Param('clientId') clientId: string) {
     return this.campaignReportService.getFailedMessages(Number(clientId));

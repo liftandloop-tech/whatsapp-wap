@@ -6,7 +6,7 @@ import { SharedModule } from './shared/shared.module';
 import { WhatsappTemplateService } from './services/whatsapp-template.service';
 import { WhatsappTemplateProvider } from './providers/whatsapp-template.provider';
 import { WhatsappDatabaseModule } from './database/whatsapp-database-module';
-import { WhatsappMediaService } from './services/whatsapp-media.service';
+import { WhatsappMediaService } from './services/whatsapp-media.service.js';
 import { WhatsappMediaProvider } from './providers/whatsapp-media.provider';
 
 @Module({

@@ -5,6 +5,7 @@ import { Campaign } from '../../schemas/campaign.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { MessageLog } from '../../schemas/message-log.schema';
 import { Message } from '../../schemas/message.schema';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 @Injectable()
 export class CampaignReportService {
@@ -17,6 +18,8 @@ export class CampaignReportService {
 
     @InjectModel(Message.name)
     private readonly messageModel: Model<Message>,
+
+    private readonly prisma: PrismaService,
   ) {}
 
   // 1. GET ALL Campaigns Report (with stats)
@@ -37,7 +40,7 @@ export class CampaignReportService {
       const limit = Number(payload.limit) || 50;
       const skip = (page - 1) * limit;
 
-      const pipeline = this.buildAggregationPipeline(start, end, limit, skip);
+      const pipeline = this.buildAggregationPipeline(start,end,limit,skip);
       const data = await this.campaignModel.aggregate(pipeline);
 
       return {
@@ -75,23 +78,53 @@ export class CampaignReportService {
     // Aggregate Stats from Messages collection (Live status)
     const stats = await this.messageModel.aggregate([
       { $match: { campaignId: id } },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: null,
+          sent: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0
+              ]
+            }
+          },
+          read: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                    { $eq: [ "$status", "read" ] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          failed: {
+            $sum: {
+              $cond: [
+                { $ne: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0
+              ]
+            }
+          },
+        }
+      }
     ]);
 
     const summary = {
       total: campaign.totalRecipients || 0,
-      sent: 0,
-      delivered: 0,
-      read: 0,
-      failed: 0,
+      sent: stats[0]?.sent || 0,
+      delivered: stats[0]?.delivered || 0,
+      read: stats[0]?.read || 0,
+      failed: stats[0]?.failed || 0,
     };
-
-    stats.forEach((s) => {
-      if (s._id === 'sent') summary.sent = s.count;
-      if (s._id === 'delivered') summary.delivered = s.count;
-      if (s._id === 'read') summary.read = s.count;
-      if (s._id === 'failed') summary.failed = s.count;
-    });
 
     // Failure Insights from MessageLogs
     const failures = await this.messageLogModel.aggregate([
@@ -128,21 +161,37 @@ export class CampaignReportService {
   async getDashboardStats(clientId: number) {
     const stats = await this.messageModel.aggregate([
       { $match: { clientId } },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: null,
+          submission: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0,
+              ],
+            },
+          },
+          failed: {
+            $sum: {
+              $cond: [
+                { $ne: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
     ]);
 
     const counts = {
-      submission: 0,
-      delivered: 0,
-      failed: 0,
+      submission: stats[0]?.submission || 0,
+      delivered: stats[0]?.delivered || 0,
+      failed: stats[0]?.failed || 0,
     };
-
-    stats.forEach((s) => {
-      counts.submission += s.count;
-      if (s._id === 'delivered' || s._id === 'read')
-        counts.delivered += s.count;
-      if (s._id === 'failed') counts.failed += s.count;
-    });
 
     return {
       success: true,
@@ -166,12 +215,20 @@ export class CampaignReportService {
           Submitted: { $sum: 1 },
           Delivered: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0],
+              $cond: [
+                { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0,
+              ],
             },
           },
           Failed: {
             $sum: {
-              $cond: [{ $eq: ['$status', 'failed'] }, 1, 0],
+              $cond: [
+                { $ne: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0,
+              ],
             },
           },
         },
@@ -209,10 +266,40 @@ export class CampaignReportService {
           _id: '$clientId',
           queued: { $sum: { $cond: [{ $eq: ['$status', 'queued'] }, 1, 0] } },
           processing: { $sum: { $cond: [{ $eq: ['$status', 'processing'] }, 1, 0] } },
-          submitted: { $sum: { $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0] } },
-          delivered: { $sum: { $cond: [{ $and: [{ $ne: ['$deliveredAt', null] }, { $gt: ['$deliveredAt', ''] }] }, 1, 0] } },
-          read: { $sum: { $cond: [{ $and: [{ $ne: ['$readAt', null] }, { $gt: ['$readAt', ''] }] }, 1, 0] } },
-          failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+          submitted: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0
+              ]
+            }
+          },
+          read: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                    { $ne: ['$readAt', null] },
+                    { $gt: ['$readAt', ''] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          failed: {
+            $sum: {
+              $cond: [
+                { $ne: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                1,
+                0
+              ]
+            }
+          },
           system_failed: { $sum: { $cond: [{ $eq: ['$status', 'dead'] }, 1, 0] } },
         }
       }
@@ -222,6 +309,112 @@ export class CampaignReportService {
       success: true,
       data: stats
     };
+  }
+
+  // 6. GET Daily Stats (Grouped by Date)
+  async getDailyStats(clientId: number, query: any) {
+    try {
+      const matchStage: any = { clientId: clientId };
+      
+      const stats = await this.messageModel.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            },
+            Submitted: { $sum: 1 },
+            Delivered: {
+              $sum: {
+                $cond: [
+                  { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                  1,
+                  0,
+                ],
+              },
+            },
+            Read: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                      { $eq: ['$status', 'read'] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            Failed: {
+              $sum: {
+                $cond: [
+                  { $ne: [ { $ifNull: ["$failureReason", ""] }, "" ] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+        { $sort: { _id: -1 as const } },
+      ]);
+
+      // Fetch transactions from Prisma to calculate actual cost
+      let txByDate: Record<string, number> = {};
+      try {
+        const txs = await this.prisma.transaction.findMany({
+          where: {
+            clientId,
+            status: 'SUCCESS',
+            type: { in: ['DEBIT', 'REFUND'] },
+          },
+          select: {
+            amount: true,
+            type: true,
+            createdAt: true,
+          },
+        });
+
+        for (const tx of txs) {
+          const dateStr = tx.createdAt.toISOString().split('T')[0];
+          // DEBIT amounts are stored as negative (e.g. -0.82), so Math.abs gives the cost.
+          // REFUND amounts are stored as positive (e.g. +0.82), so we subtract it back.
+          const contribution =
+            tx.type === 'DEBIT' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+          txByDate[dateStr] = (txByDate[dateStr] || 0) + contribution;
+        }
+      } catch (dbErr) {
+        console.error('Failed to query transactions for daily stats:', dbErr.message);
+      }
+
+      return stats.map((s) => {
+        const dateStr = s._id;
+        let actualPrice = txByDate[dateStr];
+        if (actualPrice === undefined) {
+          // Fallback: estimate based on submitted count (e.g. default marketing rate of 0.82)
+          actualPrice = s.Submitted * 0.82;
+        }
+
+        if (actualPrice < 0) {
+          actualPrice = 0;
+        }
+
+        return {
+          date: dateStr,
+          submitted: s.Submitted,
+          delivered: s.Delivered,
+          read: s.Read,
+          failed: s.Failed,
+          autoReply: 0,
+          agentReply: 0,
+          price: Number(actualPrice.toFixed(2)),
+        };
+      });
+    } catch (err) {
+      throw new Error('Failed to fetch daily stats: ' + err.message);
+    }
   }
 
   // ====================build pipeline =================================================
@@ -383,9 +576,12 @@ export class CampaignReportService {
 
   async getFailedMessages(clientId: number) {
     return this.messageModel
-      .find({ clientId, status: 'dead' })
-      .select('to failedAt failureReason content')
-      .sort({ failedAt: -1 })
+      .find({
+        clientId,
+        failureReason: { $exists: true, $nin: [null, ''] }
+      })
+      .select('to failedAt failureReason content createdAt')
+      .sort({ failedAt: -1, createdAt: -1 })
       .limit(100)
       .exec();
   }

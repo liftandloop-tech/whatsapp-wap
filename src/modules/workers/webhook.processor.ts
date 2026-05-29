@@ -217,12 +217,14 @@ export class WebhookProcessor extends WorkerHost {
       const timestamp = new Date(parseInt(status.timestamp) * 1000);
       this.logger.setTraceMetadata({ wamid });
 
-      await this.prisma.$transaction(async (tx) => {
-        const message = await tx.message.findUnique({
-          where: { wamid },
-        });
+      // 1. Check if message exists in Prisma first (outside of transaction)
+      const message = await this.prisma.message.findUnique({
+        where: { wamid },
+      });
 
-        if (message) {
+      if (message) {
+        // Only run a transaction if we actually need to update Prisma tables
+        await this.prisma.$transaction(async (tx) => {
           await tx.messageStatusEvent.create({
             data: {
               messageId: message.id,
@@ -247,39 +249,39 @@ export class WebhookProcessor extends WorkerHost {
               aggregateType: 'Message',
             },
           );
-          return; // Exit transaction once handled in Prisma
-        }
+        });
+        continue;
+      }
 
-        // 🔗 FALLBACK: Check MongoDB for Bulk/Campaign messages
-        try {
-          const bulkMessage = await this.messageModel.findOne({ providerMessageId: wamid });
-          if (bulkMessage) {
-            const updateFields: any = { status: status.status };
-            if (status.status === 'sent') updateFields.sentAt = timestamp;
-            if (status.status === 'delivered') updateFields.deliveredAt = timestamp;
-            if (status.status === 'read') updateFields.readAt = timestamp;
-            if (status.status === 'failed') {
-              updateFields.status = 'dead';
-              updateFields.failureReason = status.errors?.[0]?.message || 'Meta Delivery Failure';
-            }
-
-            await this.messageModel.updateOne(
-              { _id: bulkMessage._id },
-              { $set: updateFields }
-            );
-
-            this.logger.log(`[BULK_STATUS] Updated campaign message ${wamid} to ${status.status}`);
-            
-            // Check campaign completion
-            await this.campaignGuard.checkCompletion(bulkMessage.campaignId.toString());
-            return;
+      // 🔗 FALLBACK: Check MongoDB for Bulk/Campaign messages (entirely outside of Prisma transaction)
+      try {
+        const bulkMessage = await this.messageModel.findOne({ providerMessageId: wamid });
+        if (bulkMessage) {
+          const updateFields: any = { status: status.status };
+          if (status.status === 'sent') updateFields.sentAt = timestamp;
+          if (status.status === 'delivered') updateFields.deliveredAt = timestamp;
+          if (status.status === 'read') updateFields.readAt = timestamp;
+          if (status.status === 'failed') {
+            updateFields.status = 'dead';
+            updateFields.failureReason = status.errors?.[0]?.message || 'Meta Delivery Failure';
           }
-        } catch (mongoErr) {
-          this.logger.error(`Error checking MongoDB for wamid ${wamid}: ${mongoErr.message}`);
-        }
 
-        this.logger.warn(`Status update (${status.status}) for unknown message wamid: ${wamid}`);
-      });
+          await this.messageModel.updateOne(
+            { _id: bulkMessage._id },
+            { $set: updateFields }
+          );
+
+          this.logger.log(`[BULK_STATUS] Updated campaign message ${wamid} to ${status.status}`);
+          
+          // Check campaign completion
+          await this.campaignGuard.checkCompletion(bulkMessage.campaignId.toString());
+          continue;
+        }
+      } catch (mongoErr) {
+        this.logger.error(`Error checking MongoDB for wamid ${wamid}: ${mongoErr.message}`);
+      }
+
+      this.logger.warn(`Status update (${status.status}) for unknown message wamid: ${wamid}`);
     }
   }
 

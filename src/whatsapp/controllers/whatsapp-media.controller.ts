@@ -14,7 +14,7 @@ import * as express from 'express';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { WhatsappMediaService } from '../services/whatsapp-media.service';
+import { WhatsappMediaService } from '../services/whatsapp-media.service.js';
 
 @Controller('whatsapp/media')
 export class MediaController {
