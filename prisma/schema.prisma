@@ -303,6 +303,8 @@ model waba_credentials {
   qualityRating      String    @default("GREEN")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime
+  pixelId            String?
+  conversionSyncEnabled Boolean  @default(false)
   businessId         String?
   user               user      @relation(fields: [clientId], references: [id])
 }
